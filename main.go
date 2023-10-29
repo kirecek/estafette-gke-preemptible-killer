@@ -52,6 +52,11 @@ var (
 			Default("600").
 			Short('i').
 			Int()
+	killInterval = kingpin.Flag("kill-interval", "Time, in seconds to wait between deletion of nodes").
+			Envar("KILL_INTERVAL").
+			Default("600").
+			Short('c').
+			Int()
 	kubeConfigPath = kingpin.Flag("kubeconfig", "Provide the path to the kube config path, usually located in ~/.kube/config. For out of cluster execution").
 			Envar("KUBECONFIG").
 			String()
@@ -157,6 +162,7 @@ func main() {
 
 	// process nodes
 	go func(waitGroup *sync.WaitGroup, kubernetesClient KubernetesClient, ctx context.Context) {
+
 		for {
 			log.Info().Msg("Listing all preemptible nodes for cluster...")
 
@@ -177,7 +183,6 @@ func main() {
 				waitGroup.Add(1)
 				err := processNode(ctx, kubernetesClient, node)
 				waitGroup.Done()
-
 				if err != nil {
 					nodeTotals.With(prometheus.Labels{"status": "failed"}).Inc()
 					log.Error().
@@ -328,6 +333,9 @@ func processNode(ctx context.Context, kubernetesClient KubernetesClient, node v1
 				Msg("Error draining kubernetes node")
 			return
 		}
+
+		sleepTime := ApplyJitter(*killInterval)
+		defer time.Sleep(time.Duration(sleepTime) * time.Second)
 
 		// drain kube-dns from kubernetes node
 		err = kubernetesClient.DrainKubeDNSFromNode(ctx, node.ObjectMeta.Name, *drainTimeout)
